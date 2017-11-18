@@ -1,21 +1,22 @@
 import PropTypes from 'prop-types';
-import React, { PureComponent } from 'react';
+import React, {PureComponent} from 'react';
 import {
   Text,
   View,
-  ScrollView,
   Animated,
   Modal,
   TouchableWithoutFeedback,
   Dimensions,
   Platform,
   ViewPropTypes,
+  FlatList,
 } from 'react-native';
 import Ripple from 'react-native-material-ripple';
-import { TextField } from 'react-native-material-textfield';
+import {TextField} from 'react-native-material-textfield';
 
-import DropdownItem from '../item';
+import DropdownItem from '../DropdownItem';
 import styles from './styles';
+import utils from '../../../utils';
 
 const minMargin = 8;
 const maxMargin = 16;
@@ -25,7 +26,10 @@ export default class Dropdown extends PureComponent {
     disabled: false,
 
     rippleOpacity: 0.54,
+    rippleInsets: {},
     shadeOpacity: 0.12,
+    itemTextStyle: undefined,
+    selectedItemColor: undefined,
 
     animationDuration: 225,
     fontSize: 16,
@@ -38,6 +42,17 @@ export default class Dropdown extends PureComponent {
     itemPadding: 8,
 
     labelHeight: 32,
+    onFocus: undefined,
+    onBlur: undefined,
+    onChangeText: undefined,
+
+    renderBase: undefined,
+    renderAccessory: undefined,
+
+    containerStyle: undefined,
+    pickerStyle: undefined,
+
+    dropdownPosition: undefined,
   };
 
   static propTypes = {
@@ -56,14 +71,14 @@ export default class Dropdown extends PureComponent {
     animationDuration: PropTypes.number,
     fontSize: PropTypes.number,
 
-    value: PropTypes.string,
+    value: PropTypes.string.isRequired,
     data: PropTypes.arrayOf(PropTypes.shape({
       value: PropTypes.string,
       label: PropTypes.oneOfType([
         PropTypes.string,
         PropTypes.node,
       ]),
-    })),
+    })).isRequired,
 
     textColor: PropTypes.string,
     itemColor: PropTypes.string,
@@ -99,12 +114,13 @@ export default class Dropdown extends PureComponent {
     this.updateRippleRef = this.updateRef.bind(this, 'ripple');
     this.updateContainerRef = this.updateRef.bind(this, 'container');
     this.updateScrollRef = this.updateRef.bind(this, 'scroll');
+    this.updateListRef = this.updateRef.bind(this, 'list');
     this.renderAccessory = this.renderAccessory.bind(this);
 
     this.blur = this.onClose;
     this.focus = this.onPress;
 
-    let { value } = this.props;
+    const {value} = this.props;
 
     this.mounted = false;
     this.state = {
@@ -115,14 +131,14 @@ export default class Dropdown extends PureComponent {
     };
   }
 
-  componentWillReceiveProps({ value }) {
-    if (value !== this.props.value) {
-      this.setState({ value });
-    }
-  }
-
   componentDidMount() {
     this.mounted = true;
+  }
+
+  componentWillReceiveProps({value}) {
+    if (value !== this.props.value) {
+      this.setState({value});
+    }
   }
 
   componentWillUnmount() {
@@ -130,7 +146,7 @@ export default class Dropdown extends PureComponent {
   }
 
   onPress(event) {
-    let {
+    const {
       data = [],
       disabled,
       onFocus,
@@ -144,12 +160,12 @@ export default class Dropdown extends PureComponent {
       return;
     }
 
-    let itemCount = data.length;
-    let visibleItemCount = this.visibleItemCount();
-    let tailItemCount = this.tailItemCount();
-    let timestamp = Date.now();
+    const itemCount = data.length;
+    const visibleItemCount = this.visibleItemCount();
+    const tailItemCount = this.tailItemCount();
+    const timestamp = Date.now();
 
-    if (null != event) {
+    if (event !== null) {
       /* Adjust event location */
       event.nativeEvent.locationY -= this.rippleInsets().top;
 
@@ -161,20 +177,22 @@ export default class Dropdown extends PureComponent {
       return;
     }
 
-    if ('function' === typeof onFocus) {
+    if (typeof onFocus === 'function') {
       onFocus();
     }
 
-    let dimensions = Dimensions.get('window');
+    const dimensions = Dimensions.get('window');
 
-    this.container.measureInWindow((x, y, containerWidth, containerHeight) => {
-      let { opacity } = this.state;
+    this.container.measureInWindow((x, y, containerWidth, /* containerHeight */) => {
+      const {opacity} = this.state;
 
-      let delay = Math.max(0, animationDuration - (Date.now() - timestamp));
-      let selected = this.selectedIndex();
+      const delay = Math.max(0, animationDuration - (Date.now() - timestamp));
+      const selected = this.selectedIndex();
+
       let offset = 0;
 
       if (itemCount > visibleItemCount) {
+        // eslint-disable-next-line yoda
         if (null == dropdownPosition) {
           switch (selected) {
             case -1:
@@ -191,13 +209,12 @@ export default class Dropdown extends PureComponent {
                 offset = this.itemSize() * (selected - 1);
               }
           }
-        } else {
-          if (~selected) {
-            if (dropdownPosition < 0) {
-              offset = this.itemSize() * (selected - visibleItemCount - dropdownPosition);
-            } else {
-              offset = this.itemSize() * (selected - dropdownPosition);
-            }
+        // eslint-disable-next-line no-bitwise
+        } else if (~selected) {
+          if (dropdownPosition < 0) {
+            offset = this.itemSize() * (selected - visibleItemCount - dropdownPosition);
+          } else {
+            offset = this.itemSize() * (selected - dropdownPosition);
           }
         }
       }
@@ -222,9 +239,9 @@ export default class Dropdown extends PureComponent {
         rightInset = minMargin;
       }
 
-      let top = y
-        + Platform.select({ ios: 1, android: 2 })
-        + labelHeight
+      const top = (y
+        + Platform.select({ios: 1, android: 2})
+        + labelHeight)
         - itemPadding;
 
       this.setState({
@@ -239,32 +256,41 @@ export default class Dropdown extends PureComponent {
 
       setTimeout((() => {
         if (this.mounted) {
-          if (this.scroll) {
-            this.scroll.scrollTo({ x: 0, y: offset, animated: false });
+          if (this.list) {
+            if (this.selectedIndex()) {
+              this.list.scrollToOffset({offset, animated: false});
+            }
           }
+          setTimeout(() => {
+            if (!this.mounted) {
+              return;
+            }
 
-          Animated
-            .timing(opacity, {
-              duration: animationDuration,
-              toValue: 1,
-            })
-            .start(() => {
-              if (this.mounted && 'ios' === Platform.OS) {
-                let { flashScrollIndicators } = this.scroll || {};
+            Animated
+              .timing(opacity, {
+                duration: animationDuration,
+                toValue: 1,
+              })
+              .start(() => {
+                // eslint-disable-next-line yoda
+                if (this.mounted && 'ios' === Platform.OS) {
+                  const {flashScrollIndicators} = this.scroll || {};
 
-                if ('function' === typeof flashScrollIndicators) {
-                  flashScrollIndicators.call(this.scroll);
+                  // eslint-disable-next-line yoda
+                  if ('function' === typeof flashScrollIndicators) {
+                    flashScrollIndicators.call(this.scroll);
+                  }
                 }
-              }
-            });
+              });
+          });
         }
       }), delay);
     });
   }
 
   onClose() {
-    let { onBlur, animationDuration } = this.props;
-    let { opacity } = this.state;
+    const {onBlur, animationDuration} = this.props;
+    const {opacity} = this.state;
 
     Animated
       .timing(opacity, {
@@ -272,55 +298,59 @@ export default class Dropdown extends PureComponent {
         toValue: 0,
       })
       .start(() => {
+        // eslint-disable-next-line yoda
         if ('function' === typeof onBlur) {
           onBlur();
         }
 
         if (this.mounted) {
-          this.setState({ modal: false });
+          this.setState({modal: false});
         }
       });
   }
 
   onSelect(index) {
-    let { data, onChangeText, animationDuration } = this.props;
-    let { value } = data[index];
+    const {data, onChangeText, animationDuration} = this.props;
+    const {value} = data[index];
 
-    this.setState({ value });
+    this.setState({value});
 
-    if ('function' === typeof onChangeText) {
+    if (typeof onChangeText === 'function') {
       onChangeText(value, index, data);
     }
 
     setTimeout(this.onClose, animationDuration);
   }
 
-  isFocused() {
-    return this.state.modal;
-  }
+  getItemLayout = (data, index) => ({
+    offset: 8 + (index * this.itemSize()),
+    length: this.itemSize(),
+    index,
+  })
+
 
   selectedIndex() {
-    let { data = [] } = this.props;
+    const {data = []} = this.props;
 
     return data
-      .findIndex(({ value }) => value === this.state.value);
+      .findIndex(({value}) => value === this.state.value);
   }
 
   selectedItem() {
-    let { data = [] } = this.props;
+    const {data = []} = this.props;
 
     return data
-      .find(({ value }) => value === this.state.value);
+      .find(({value}) => value === this.state.value);
   }
 
   itemSize() {
-    let { fontSize, itemPadding } = this.props;
+    const {fontSize, itemPadding} = this.props;
 
-    return fontSize * 1.5 + itemPadding * 2;
+    return (fontSize * 1.5) + (itemPadding * 2);
   }
 
   visibleItemCount() {
-    let { data = [], itemCount } = this.props;
+    const {data = [], itemCount} = this.props;
 
     return Math.min(data.length, itemCount);
   }
@@ -330,14 +360,20 @@ export default class Dropdown extends PureComponent {
   }
 
   rippleInsets() {
-    let {
-      top = 16,
+    const {
+      // top = 16,
+      top = 0,
       right = 0,
-      bottom = -8,
+      // bottom = -8,
+      bottom = 0,
       left = 0,
     } = this.props.rippleInsets || {};
 
-    return { top, right, bottom, left };
+    return {top, right, bottom, left};
+  }
+
+  isFocused() {
+    return this.state.modal;
   }
 
   updateRef(name, ref) {
@@ -345,8 +381,8 @@ export default class Dropdown extends PureComponent {
   }
 
   renderBase() {
-    let { value } = this.state;
-    let {
+    const {value} = this.state;
+    const {
       containerStyle,
       rippleInsets,
       rippleOpacity,
@@ -355,14 +391,14 @@ export default class Dropdown extends PureComponent {
       ...props
     } = this.props;
 
-    let { label = value } = this.selectedItem() || {};
+    const {label = value} = this.selectedItem() || {};
 
-    if ('function' === typeof renderBase) {
-      return renderBase({ ...props, label, value, renderAccessory });
+    if (typeof renderBase === 'function') {
+      return renderBase({...props, label, value, renderAccessory});
     }
 
-    let title = 'string' === typeof label?
-        label:
+    const title = typeof label === 'string' ?
+        label :
         value;
 
     return (
@@ -378,8 +414,8 @@ export default class Dropdown extends PureComponent {
   }
 
   renderAccessory() {
-    let { baseColor: backgroundColor } = this.props;
-    let triangleStyle = { backgroundColor };
+    const {baseColor: backgroundColor} = this.props;
+    const triangleStyle = {backgroundColor};
 
     return (
       <View style={styles.accessory}>
@@ -390,10 +426,56 @@ export default class Dropdown extends PureComponent {
     );
   }
 
-  renderItems() {
-    let { selected, leftInset, rightInset } = this.state;
+  renderItem = ({item, index}) => {
+    const {selected, leftInset, rightInset} = this.state;
 
-    let {
+    const {
+      textColor,
+      itemColor,
+      selectedItemColor = textColor,
+      baseColor,
+      fontSize,
+      itemTextStyle,
+      animationDuration,
+      rippleOpacity,
+      shadeOpacity,
+    } = this.props;
+
+    const props = {
+      baseColor,
+      fontSize,
+      animationDuration,
+      rippleOpacity,
+      shadeOpacity,
+      onPress: this.onSelect,
+      style: {
+        height: this.itemSize(),
+        paddingLeft: leftInset,
+        paddingRight: rightInset,
+      },
+    };
+
+    // eslint-disable-next-line
+    const color = ~selected ?
+      index === selected ?
+        selectedItemColor :
+        itemColor :
+      selectedItemColor;
+
+    const style = {color, fontSize};
+    const text = typeof item.label === 'undefined' ? item.value : item.label;
+    return (
+      <DropdownItem index={index} {...props}>
+        <Text style={[itemTextStyle, style]} numberOfLines={1}>
+          {text}
+        </Text>
+      </DropdownItem>
+    );
+  }
+  renderItems() {
+    const {selected, leftInset, rightInset} = this.state;
+
+    const {
       data = [],
       textColor,
       itemColor,
@@ -406,7 +488,7 @@ export default class Dropdown extends PureComponent {
       shadeOpacity,
     } = this.props;
 
-    let props = {
+    const props = {
       baseColor,
       fontSize,
       animationDuration,
@@ -421,17 +503,18 @@ export default class Dropdown extends PureComponent {
     };
 
     return data
-      .map(({ value, label = value }, index) => {
-        let color = ~selected?
-          index === selected?
-            selectedItemColor:
-            itemColor:
+      .map(({value, label = value}, index) => {
+        // eslint-disable-next-line no-nested-ternary, no-bitwise
+        const color = ~selected ?
+          index === selected ?
+            selectedItemColor :
+            itemColor :
           selectedItemColor;
 
-        let style = { color, fontSize };
+        const style = {color, fontSize};
 
         return (
-          <DropdownItem index={index} key={index} {...props}>
+          <DropdownItem index={index} {...props}>
             <Text style={[itemTextStyle, style]} numberOfLines={1}>
               {label}
             </Text>
@@ -441,7 +524,7 @@ export default class Dropdown extends PureComponent {
   }
 
   render() {
-    let {
+    const {
       data = [],
       rippleOpacity,
       containerStyle,
@@ -452,27 +535,27 @@ export default class Dropdown extends PureComponent {
       dropdownPosition,
     } = this.props;
 
-    let { left, top, width, opacity, selected, modal } = this.state;
+    const {left, top, width, opacity, selected, modal} = this.state;
 
-    let dimensions = Dimensions.get('window');
+    const dimensions = Dimensions.get('window');
 
-    let itemCount = data.length;
-    let visibleItemCount = this.visibleItemCount();
-    let tailItemCount = this.tailItemCount();
-    let itemSize = this.itemSize();
+    const itemCount = data.length;
+    const visibleItemCount = this.visibleItemCount();
+    const tailItemCount = this.tailItemCount();
+    const itemSize = this.itemSize();
 
-    let overlayStyle = {
+    const overlayStyle = {
       width: dimensions.width,
       height: dimensions.height,
     };
 
-    let height = 2 * itemPadding + itemSize * visibleItemCount;
+    const height = (2 * itemPadding) + (itemSize * visibleItemCount);
     let translateY = -itemPadding;
 
-    if (null == dropdownPosition) {
+    if (dropdownPosition == null) {
       switch (selected) {
         case -1:
-          translateY -= 1 === itemCount? 0 : itemSize;
+          translateY -= itemCount === 1 ? 0 : itemSize;
           break;
 
         case 0:
@@ -485,35 +568,37 @@ export default class Dropdown extends PureComponent {
             translateY -= itemSize;
           }
       }
+    } else if (dropdownPosition < 0) {
+      translateY -= itemSize * (visibleItemCount + dropdownPosition);
     } else {
-      if (dropdownPosition < 0) {
-        translateY -= itemSize * (visibleItemCount + dropdownPosition);
-      } else {
-        translateY -= itemSize * dropdownPosition;
-      }
+      translateY -= itemSize * dropdownPosition;
     }
 
-    let pickerStyle = {
+    const pickerStyle = {
       width,
       height,
       top,
       left,
       opacity,
-      transform: [{ translateY }],
+      transform: [{translateY}],
     };
 
-    let { bottom, ...insets } = this.rippleInsets();
-    let rippleStyle = {
+    const {bottom, ...insets} = this.rippleInsets();
+    const rippleStyle = {
       ...insets,
 
       height: itemSize - bottom,
       position: 'absolute',
     };
-
+    const currentIndex = this.selectedIndex() || 0;
+    const initialIndex = Math.min(
+      Math.max(0, currentIndex - Math.ceil(visibleItemCount / 2)),
+      data.length - visibleItemCount
+    );
     return (
-      <View onLayout={() => undefined} ref={this.updateContainerRef} style={containerStyle}>
+      <View onLayout={utils.noop} ref={this.updateContainerRef} style={containerStyle}>
         <TouchableWithoutFeedback onPress={this.onPress}>
-          <View pointerEvents='box-only'>
+          <View pointerEvents="box-only">
             {this.renderBase()}
 
             <Ripple
@@ -533,14 +618,20 @@ export default class Dropdown extends PureComponent {
               <Animated.View
                 style={[styles.picker, pickerStyle, pickerStyleOverrides]}
               >
-                <ScrollView
-                  ref={this.updateScrollRef}
+                <View
                   style={styles.scroll}
-                  scrollEnabled={visibleItemCount < itemCount}
-                  contentContainerStyle={styles.scrollContainer}
                 >
-                  {this.renderItems()}
-                </ScrollView>
+                  <FlatList
+                    ref={this.updateListRef}
+                    initialScrollIndex={initialIndex}
+                    data={data}
+                    extraData={this.state}
+                    renderItem={this.renderItem}
+                    getItemLayout={this.getItemLayout}
+                    ListHeaderComponent={<View style={{height: 8}} />}
+                    ListFooterComponent={<View style={{height: 8}} />}
+                  />
+                </View>
               </Animated.View>
             </View>
           </TouchableWithoutFeedback>

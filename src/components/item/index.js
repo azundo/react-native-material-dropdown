@@ -1,7 +1,7 @@
 import PropTypes from 'prop-types';
-import React, { PureComponent } from 'react';
-import { View, ViewPropTypes } from 'react-native';
-import { Button } from 'react-native-material-buttons';
+import React, {PureComponent} from 'react';
+import {View, ViewPropTypes} from 'react-native';
+import {Button} from 'react-native-material-buttons';
 
 import styles from './styles';
 
@@ -10,6 +10,7 @@ export default class DropdownItem extends PureComponent {
     color: 'transparent',
     rippleContainerBorderRadius: 0,
     shadeBorderRadius: 0,
+    style: undefined,
   };
 
   static propTypes = {
@@ -18,13 +19,13 @@ export default class DropdownItem extends PureComponent {
     children: PropTypes.oneOfType([
       PropTypes.arrayOf(PropTypes.node),
       PropTypes.node,
-    ]),
+    ]).isRequired,
 
-    onPress: PropTypes.func,
+    onPress: PropTypes.func.isRequired,
 
     index: PropTypes.number.isRequired,
     baseColor: PropTypes.string.isRequired,
-    animationDuration: PropTypes.number,
+    animationDuration: PropTypes.number.isRequired,
   };
 
   constructor(props) {
@@ -34,15 +35,15 @@ export default class DropdownItem extends PureComponent {
   }
 
   onPress() {
-    let { onPress, index } = this.props;
+    const {onPress, index} = this.props;
 
-    if ('function' === typeof onPress) {
+    if (typeof onPress === 'function') {
       onPress(index);
     }
   }
 
   render() {
-    let {
+    const {
       children,
       style,
       animationDuration,
